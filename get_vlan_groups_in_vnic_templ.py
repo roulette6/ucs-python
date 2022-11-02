@@ -12,32 +12,25 @@ vNIC templates.
 
 def main():
     import re
+    import sys
     from ucsmsdk.ucshandle import UcsHandle
 
-    # log into UCS and verify login success
+    # log into UCS
     handle = UcsHandle("ucs.vm.jm", "ucsro", "ucsro")
-    handle.login()
 
-    # create dict of VLAN groups with empty list of VLANs
-    vlan_groups = {}
-    vlan_group_objects = handle.query_classid("fabricNetGroup")
+    # get dict of empty lists whose key is the VLAN group name
+    vlan_groups = get_vlan_group_names(handle)
 
-    for object in vlan_group_objects:
-        vlan_groups[object.name] = []
-
-    # add VLANs referenced in VLAN groups to their group
-    # delete example below after code is complete
-    # dn: fabric/lan/net-group-linux_grp/net-core_30
-    # name: core_30
-
+    # get VLANs referenced in VLAN groups
     vlan_ref_objects = handle.query_classid("fabricPooledVlan")
 
+    # add VLAN names to list whose key is their VLAN group
     for object in vlan_ref_objects:
         # match the VLAN group name in the DN
         match = re.search(r"(?:net-group-)(?P<v_group>\w+)(?:\/)", object.dn)
 
-        # if there's a match, add the VLAN name to the list
-        # whose key is the VLAN group name
+        # if there's a match, add the VLAN name to the list whose key
+        # is the VLAN group name
         if match:
             vlan_groups[match.group("v_group")].append(object.name)
 
@@ -65,11 +58,35 @@ def main():
         if match:
             vlan_group_usage = (
                 f"vNIC template {match.group('vnic_template')} "
-                f"uses VLAN group {match.group('vlan_group')}"
+                f"uses VLAN group {match.group('vlan_group')}\n--"
             )
             print(vlan_group_usage)
 
     handle.logout()
+
+
+def get_vlan_group_names(ucs_handle):
+    """
+    Returns a dict of empty lists whose keys are the VLAN group names
+
+        Parameters:
+            ucs_handle (obj): A handle for a UCS session
+
+        Returns:
+            vlan_groups (dict): Dict of VLAN group names as keys
+    """
+
+    if not ucs_handle.login():
+        sys.exit("Invalid UCS handle. Please check FQDN and credentials")
+
+    # create dict of VLAN groups with empty list of VLANs
+    vlan_groups = {}
+    vlan_group_objects = ucs_handle.query_classid("fabricNetGroup")
+
+    for object in vlan_group_objects:
+        vlan_groups[object.name] = []
+
+    return vlan_groups
 
 
 if __name__ == "__main__":
