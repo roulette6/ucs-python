@@ -6,7 +6,7 @@ an org with permission to use the VLAN group.
 This script will create a dict of VLAN groups with a list
 of the VLANs in those groups, as well as a list of the
 references to those VLAN groups (fabricNetGroupRef) by
-vNIC templates and LAN connectivity policies.
+vNIC templates.
 """
 
 import re
