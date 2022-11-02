@@ -9,34 +9,99 @@ references to those VLAN groups (fabricNetGroupRef) by
 vNIC templates.
 """
 
+from re import search
+import sys
+from ucsmsdk.ucshandle import UcsHandle
+
 
 def main():
-    import re
-    import sys
-    from ucsmsdk.ucshandle import UcsHandle
 
-    # log into UCS
+    # log into UCS and exit if there was a login issue
     handle = UcsHandle("ucs.vm.jm", "ucsro", "ucsro")
+    if not handle.login():
+        sys.exit("Invalid UCS handle. Please check FQDN and credentials")
 
-    # get dict of empty lists whose key is the VLAN group name
-    vlan_groups = get_vlan_group_names(handle)
-
-    # get VLANs referenced in VLAN groups
+    # get lists of objects needed and log out
+    vlan_group_objects = handle.query_classid("fabricNetGroup")
     vlan_ref_objects = handle.query_classid("fabricPooledVlan")
+    group_ref_objects = handle.query_classid("fabricNetGroupRef")
+    handle.logout()
 
-    # add VLAN names to list whose key is their VLAN group
-    for object in vlan_ref_objects:
-        # match the VLAN group name in the DN
-        match = re.search(r"(?:net-group-)(?P<v_group>\w+)(?:\/)", object.dn)
+    # create dict of empty lists whose keys are the VLAN group names
+    vlan_groups = get_vlan_group_names(vlan_group_objects)
 
-        # if there's a match, add the VLAN name to the list whose key
-        # is the VLAN group name
+    # get VLANs referenced in VLAN groups and update vlan_groups dict
+    vlan_groups = add_vlans_to_groups(vlan_groups, vlan_ref_objects)
+
+    # format dict of VLAN groups into a human readable str and print it
+    print(
+        "\n##### VLAN groups and their VLANs: #####",
+        get_vlan_group_string(vlan_groups),
+        sep="\n",
+    )
+
+    # format list of VLAN group references in vNIC templates and print it
+    print(
+        "##### vNIC template references: #####",
+        get_vlan_group_ref_string(group_ref_objects),
+        sep="",
+    )
+
+
+def get_vlan_group_names(vg_obj):
+    """
+    Returns a dict of empty lists whose keys are the VLAN group names
+
+        Parameters:
+            vg_obj (list): A list of VLAN group objects
+
+        Returns:
+            vlan_groups (dict): Dict of VLAN group names as keys
+    """
+
+    # create dict of VLAN groups with empty list of VLANs
+    vlan_groups = {}
+    for object in vg_obj:
+        vlan_groups[object.name] = []
+
+    return vlan_groups
+
+
+def add_vlans_to_groups(vlan_groups, vlan_refs):
+    """
+    Returns a dict of lists whose keys are the VLAN group names and list
+    values are the VLAN names referenced by that group
+
+        Parameters:
+            vlan_groups (dict): A dict of lists for updating
+            vgvlan_refs (list): A list of VLAN ref objects
+
+        Returns:
+            vlan_groups (dict): Dict of VLAN groups and their VLANs
+    """
+    for vlan_ref in vlan_refs:
+        # match the VLAN group name in the DN and add VLAN name to the
+        # list whose key is the VLAN group name
+        match = search(r"(?:net-group-)(?P<v_group>\w+)(?:\/)", vlan_ref.dn)
+
         if match:
-            vlan_groups[match.group("v_group")].append(object.name)
+            vlan_groups[match.group("v_group")].append(vlan_ref.name)
 
-    # print the dict of lists with leading empty line to
-    # separate output from CLI command
-    print()
+    return vlan_groups
+
+
+def get_vlan_group_string(vlan_groups):
+    """
+    Returns a string of VLAN groups and their VLANs
+
+        Parameters:
+            vlan_groups (dict): A dict of lists such as the following:
+            {"grp1": [vlan1, vlan2], "grp2": [vlan3, vlan4]}
+
+        Returns:
+            vg_string (str): String of VLAN groups and their VLANs
+    """
+    vg_string = ""
     for group, vlans in vlan_groups.items():
         # sort list of VLANs and build comma
         # separated string of VLAN names
@@ -46,47 +111,36 @@ def main():
         for vlan in vlans[:-1]:
             vlan_names += f"{vlan}, "
         vlan_names += f"{vlans.pop()}"
-        print(f"VLAN group: {group}", f"VLANs: {vlan_names}", sep="\n", end="\n\n")
+        vg_string += f"VLAN group: {group}\nVLANs: {vlan_names}\n--\n"
 
-    group_ref_objects = handle.query_classid("fabricNetGroupRef")
+    return vg_string
 
-    for object in group_ref_objects:
-        match = re.search(
+
+def get_vlan_group_ref_string(group_refs):
+    """
+    Returns a string of VLAN groups referenced by vNIC templates
+
+        Parameters:
+            group_refs (list): A list of VLAN group reference objects
+
+        Returns:
+            group_ref_string (str): String of vNIC templates and  VLAN
+            group they reference
+    """
+    group_ref_string = ""
+    for ref in group_refs:
+        match = search(
             r"(?:lan-conn-templ-)(?P<vnic_template>\w+)(?:/)(?:net-group-ref-)(?P<vlan_group>\w+)",
-            object.dn,
+            ref.dn,
         )
         if match:
             vlan_group_usage = (
                 f"vNIC template {match.group('vnic_template')} "
                 f"uses VLAN group {match.group('vlan_group')}\n--"
             )
-            print(vlan_group_usage)
+            group_ref_string += f"\n{vlan_group_usage}"
 
-    handle.logout()
-
-
-def get_vlan_group_names(ucs_handle):
-    """
-    Returns a dict of empty lists whose keys are the VLAN group names
-
-        Parameters:
-            ucs_handle (obj): A handle for a UCS session
-
-        Returns:
-            vlan_groups (dict): Dict of VLAN group names as keys
-    """
-
-    if not ucs_handle.login():
-        sys.exit("Invalid UCS handle. Please check FQDN and credentials")
-
-    # create dict of VLAN groups with empty list of VLANs
-    vlan_groups = {}
-    vlan_group_objects = ucs_handle.query_classid("fabricNetGroup")
-
-    for object in vlan_group_objects:
-        vlan_groups[object.name] = []
-
-    return vlan_groups
+    return group_ref_string
 
 
 if __name__ == "__main__":
