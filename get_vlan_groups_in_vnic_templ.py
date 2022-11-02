@@ -9,62 +9,68 @@ references to those VLAN groups (fabricNetGroupRef) by
 vNIC templates.
 """
 
-import re
-from ucsmsdk.ucshandle import UcsHandle
 
-# log into UCS and verify login success
-handle = UcsHandle("ucs.vm.jm", "ucsro", "ucsro")
-handle.login()
+def main():
+    import re
+    from ucsmsdk.ucshandle import UcsHandle
 
-# create dict of VLAN groups with empty list of VLANs
-vlan_groups = {}
-vlan_group_objects = handle.query_classid("fabricNetGroup")
+    # log into UCS and verify login success
+    handle = UcsHandle("ucs.vm.jm", "ucsro", "ucsro")
+    handle.login()
 
-for object in vlan_group_objects:
-    vlan_groups[object.name] = []
+    # create dict of VLAN groups with empty list of VLANs
+    vlan_groups = {}
+    vlan_group_objects = handle.query_classid("fabricNetGroup")
 
-# add VLANs referenced in VLAN groups to their group
-# delete example below after code is complete
-# dn: fabric/lan/net-group-linux_grp/net-core_30
-# name: core_30
+    for object in vlan_group_objects:
+        vlan_groups[object.name] = []
 
-vlan_ref_objects = handle.query_classid("fabricPooledVlan")
+    # add VLANs referenced in VLAN groups to their group
+    # delete example below after code is complete
+    # dn: fabric/lan/net-group-linux_grp/net-core_30
+    # name: core_30
 
-for object in vlan_ref_objects:
-    # match the VLAN group name in the DN
-    match = re.search(r"(?:net-group-)(?P<v_group>\w+)(?:\/)", object.dn)
+    vlan_ref_objects = handle.query_classid("fabricPooledVlan")
 
-    # if there's a match, add the VLAN name to the list
-    # whose key is the VLAN group name
-    if match:
-        vlan_groups[match.group("v_group")].append(object.name)
+    for object in vlan_ref_objects:
+        # match the VLAN group name in the DN
+        match = re.search(r"(?:net-group-)(?P<v_group>\w+)(?:\/)", object.dn)
 
-# print the dict of lists with leading empty line to
-# separate output from CLI command
-print()
-for group, vlans in vlan_groups.items():
-    # sort list of VLANs and build comma
-    # separated string of VLAN names
-    vlans.sort()
-    vlan_names = ""
+        # if there's a match, add the VLAN name to the list
+        # whose key is the VLAN group name
+        if match:
+            vlan_groups[match.group("v_group")].append(object.name)
 
-    for vlan in vlans[:-1]:
-        vlan_names += f"{vlan}, "
-    vlan_names += f"{vlans.pop()}"
-    print(f"VLAN group: {group}", f"VLANs: {vlan_names}", sep="\n", end="\n\n")
+    # print the dict of lists with leading empty line to
+    # separate output from CLI command
+    print()
+    for group, vlans in vlan_groups.items():
+        # sort list of VLANs and build comma
+        # separated string of VLAN names
+        vlans.sort()
+        vlan_names = ""
 
-group_ref_objects = handle.query_classid("fabricNetGroupRef")
+        for vlan in vlans[:-1]:
+            vlan_names += f"{vlan}, "
+        vlan_names += f"{vlans.pop()}"
+        print(f"VLAN group: {group}", f"VLANs: {vlan_names}", sep="\n", end="\n\n")
 
-for object in group_ref_objects:
-    match = re.search(
-        r"(?:lan-conn-templ-)(?P<vnic_template>\w+)(?:/)(?:net-group-ref-)(?P<vlan_group>\w+)",
-        object.dn,
-    )
-    if match:
-        vlan_group_usage = (
-            f"vNIC template {match.group('vnic_template')} "
-            f"uses VLAN group {match.group('vlan_group')}"
+    group_ref_objects = handle.query_classid("fabricNetGroupRef")
+
+    for object in group_ref_objects:
+        match = re.search(
+            r"(?:lan-conn-templ-)(?P<vnic_template>\w+)(?:/)(?:net-group-ref-)(?P<vlan_group>\w+)",
+            object.dn,
         )
-        print(vlan_group_usage)
+        if match:
+            vlan_group_usage = (
+                f"vNIC template {match.group('vnic_template')} "
+                f"uses VLAN group {match.group('vlan_group')}"
+            )
+            print(vlan_group_usage)
 
-handle.logout()
+    handle.logout()
+
+
+if __name__ == "__main__":
+    main()
